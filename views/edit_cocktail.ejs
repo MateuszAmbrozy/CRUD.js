@@ -1,0 +1,43 @@
+<%- include('layout/header') %>
+
+<div class="container">
+    <div class="row">
+        <div class="container">
+            <div class="row">
+                <div class="col-lg-6 mx-auto mt-4">
+                    <div class="card shadow">
+                        <div class="card-header bg-primary">
+                            <h5 class="text-light">Edit Cocktail (<%= cocktail.name %>)</h5> <!-- Wyświetlanie nazwy koktajlu w nagłówku -->
+                        </div>
+                        <div class="card-body p-4">
+                            <form action="/cocktails/<%= cocktail._id %>/edit" method="post" id="edit-form" enctype="multipart/form-data">
+                                <!-- Pola do edycji -->
+                                <div class="mb-3">
+                                    <label for="name">Name</label>
+                                    <input type="text" name="name" class="form-control form-control-lg" value="<%= cocktail.name %>" required />
+                                </div>
+                            
+                                <div class="mb-3">
+                                    <label for="category">Category</label>
+                                    <input type="text" name="category" class="form-control form-control-lg" value="<%= cocktail.category %>" required />
+                                </div>
+                            
+                                <div class="mb-3">
+                                    <label for="instruction">Instruction</label>
+                                    <textarea name="instruction" class="form-control form-control-lg" required><%= cocktail.instruction %></textarea>
+                                </div>
+                            
+                                <!-- Przycisk zapisu zmian -->
+                                <div class="mb-3 mt-4">
+                                    <input type="submit" name="submit" value="Save Changes" class="btn btn-primary btn-lg" />
+                                </div>
+                            </form>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<%- include('layout/footer') %>

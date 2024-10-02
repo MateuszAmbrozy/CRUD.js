@@ -1,0 +1,100 @@
+<%- include('layout/header') %>
+
+<div class="container">
+    <div class="row">
+        <div class="container">
+            <div class="row">
+                <div class="col-lg-6 mx-auto mt-4">
+                    <div class="card shadow">
+                        <div class="card-header bg-primary">
+                            <h5 class="text-light">Add New Cocktail</h5>
+                        </div>
+                        <div class="card-body p-4">
+                            <form action="/add" method="post" id="add-form" enctype="multipart/form-data">
+                                <div class="mb-3">
+                                    <label for="name">Name</label>
+                                    <input type="text" name="name" class="form-control form-control-lg" placeholder="Enter Name" required />
+                                </div>
+                                <div class="mb-3">
+                                    <label for="category">Category</label>
+                                    <input type="text" name="category" class="form-control form-control-lg" placeholder="Enter category" required />
+                                </div>
+                                <div class="mb-3">
+                                    <label for="instruction">Instruction</label>
+                                    <textarea name="instruction" class="form-control form-control-lg" placeholder="Enter instruction" required></textarea>
+                                </div>
+
+                                <div id="ingredients-section">
+                                    <h5 class="text-dark">Ingredients</h5>
+                                    <div class="ingredient mb-3">
+                                        <label for="ingredients[0][name]">Ingredient Name</label>
+                                        <input type="text" name="ingredients[0][name]" class="form-control form-control-lg" placeholder="Enter ingredient name" required />
+                                        
+                                        <label for="ingredients[0][description]">Description</label>
+                                        <input name="ingredients[0][description]" class="form-control form-control-lg" placeholder="Enter description" required>
+
+                                        <label for="ingredients[0][isAlcohol]">Is Alcohol?</label>
+                                        <select name="ingredients[0][isAlcohol]" class="form-control form-control-lg">
+                                            <option value="true">Yes</option>
+                                            <option value="false">No</option>
+                                        </select>
+                                        
+                                        <label for="ingredients[0][quantity]">Quantity</label>
+                                        <input type="number" name="ingredients[0][quantity]" class="form-control form-control-lg" placeholder="Enter quantity" required />
+
+                                        <label for="ingredients[0][image]" class="form-label">Select Image</label>
+                                        <input type="file" name="ingredients[0][image]" class="form-control form-control-lg" />
+                                    </div>
+                                </div>
+
+                                <button type="button" id="add-ingredient-btn" class="btn btn-secondary btn-lg">Add Another Ingredient</button>
+
+                                <div class="mb-3 mt-4">
+                                    <input type="submit" name="submit" value="Add Cocktail" class="btn btn-primary btn-lg" />
+                                </div>
+                            </form>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<%- include('layout/footer') %>
+
+<script>
+    let ingredientIndex = 1;
+
+    document.getElementById('add-ingredient-btn').addEventListener('click', function() 
+    {
+        const ingredientSection = document.getElementById('ingredients-section');
+
+        const ingredientDiv = document.createElement('div');
+        ingredientDiv.classList.add('ingredient', 'mb-3');
+        
+        ingredientDiv.innerHTML = `
+            <hr>
+            <label for="ingredients[${ingredientIndex}][name]">Ingredient Name</label>
+            <input type="text" name="ingredients[${ingredientIndex}][name]" class="form-control form-control-lg" placeholder="Enter ingredient name" required />
+            
+            <label for="ingredients[${ingredientIndex}][description]">Description</label>
+            <textarea name="ingredients[${ingredientIndex}][description]" class="form-control form-control-lg" placeholder="Enter description" required></textarea>
+
+            <label for="ingredients[${ingredientIndex}][isAlcohol]">Is Alcohol?</label>
+            <select name="ingredients[${ingredientIndex}][isAlcohol]" class="form-control form-control-lg">
+                <option value="true">Yes</option>
+                <option value="false">No</option>
+            </select>
+
+            <label for="ingredients[${ingredientIndex}][quantity]">Quantity</label>
+            <input type="number" name="ingredients[${ingredientIndex}][quantity]" class="form-control form-control-lg" placeholder="Enter quantity" required />
+
+            <label for="ingredients[${ingredientIndex}][image]" class="form-label">Select Image</label>
+            <input type="file" name="ingredients[${ingredientIndex}][image]" class="form-control form-control-lg" />
+        `;
+
+        ingredientSection.appendChild(ingredientDiv);
+        ingredientIndex++;
+    });
+</script>
