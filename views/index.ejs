@@ -1,65 +1,73 @@
 <%- include('layout/header') %>
-
-<div class="container">
-    <div class="row my-4">
-        <div class="col-lg-12">
-            <% if(message) { %>
-                <div class="alert alert-dismissible fade show alert-<%= message.type %> "
-                            role="alert">
-                            <button
-                                class="btn-close" type="button"
-                                data-bs-dismiss="alert"
-                                aria-label="Close"> 
-                            </button>
-                            <strong><%= message.message %> </strong>
-                </div>
-            <%} %>
-            <div class="table-responsive">
-                <% if(cocktails!='') { %>
-                    <table class="table table-striped text-center">
-                        <thead>
-                            <tr class="table-dark">
-                                <th>ID</th>
-                                <th>Name</th>
-                                <th>Category</th>
-                                <th>Instruction</th>
-                                <th>Ingredients</th>
-                                <th>Actions</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            <% cocktails.forEach(function(cocktail, index) { %> <!-- Pętla iterująca po koktajlach -->
-                            <tr>
-                                <td><%= index + 1%></td>
-                                <td><%= cocktail.name %></td>
-                                <td><%= cocktail.category %></td>
-                                <td><%= cocktail.instruction %></td>
-                                <td>
-                                    <a href="/cocktails/<%= cocktail._id %>/ingredients" class="text-success">
-                                        <i class="fa-solid fa-mug-saucer mx-1"></i>
-                                    </a>
-                                </td>
-                                <td>
-                                    <a href="/cocktails/<%= cocktail._id %>/edit" class="text-success">
-                                        <i class="fas fa-edit fa-lg mx-1"></i>
-                                    </a>
-
-                                    <a href="/cocktails/<%= cocktail._id %>/delete" class="text-danger" onclick="return confirm('Are you sure you want to delete this cocktail and its ingredients?');">
-                                        <i class="fas fa-trash fa-lg mx-1"></i>
-                                    </a>
-                                </td>
-                            </tr>
-                            <% }) %>
-                        </tbody>
-                    </table>
-                <%} else { %>
-                    <h1> class="text-center text-secondary t-5"> No cocktails fount </h1>
-                <% } %>
-
-
-            </div>
-        </div>
-    </div>
-</div>
-
+<section class="hero">
+  <p class="eyebrow">THE RECIPE COLLECTION</p>
+  <h1>
+    A good drink starts
+    <br />
+    with a good recipe.
+  </h1>
+  <p>Keep your favourite cocktails, ingredients and techniques in one place.</p>
+  <a class="button" href="/add">Add a cocktail ↗</a>
+</section>
+<section>
+  <div class="section-heading">
+    <h2>
+      Your collection
+      <small>(<%= total %>)</small>
+    </h2>
+    <form class="search" method="get" action="/">
+      <label class="sr-only" for="q">Search cocktails by name</label>
+      <input id="q" name="q" maxlength="100" value="<%= q %>" placeholder="Search recipes…" />
+      <button type="submit">Search</button>
+      <% if(q) { %>
+      <a href="/">Clear</a>
+      <% } %>
+    </form>
+  </div>
+  <% if (!cocktails.length) { %>
+  <div class="empty">
+    <h3><%= q ? 'No matching recipes' : 'Your first recipe belongs here' %></h3>
+    <p><%= q ? 'Try a different name.' : 'Add a cocktail and start building your collection.' %></p>
+    <a href="/add">Create a recipe →</a>
+  </div>
+  <% } %>
+  <div class="cards">
+    <% cocktails.forEach((cocktail) => { %>
+    <article class="recipe">
+      <p class="eyebrow"><%= cocktail.category %></p>
+      <h3><a href="/cocktails/<%= cocktail._id %>/ingredients"><%= cocktail.name %></a></h3>
+      <p class="instructions"><%= cocktail.instruction %></p>
+      <p class="muted"><%= cocktail.ingredients.length %> ingredients</p>
+      <div class="actions">
+        <a href="/cocktails/<%= cocktail._id %>/ingredients">View recipe →</a>
+        <a href="/cocktails/<%= cocktail._id %>/edit">
+          Edit
+          <span class="sr-only"><%= cocktail.name %></span>
+        </a>
+        <form
+          method="post"
+          action="/cocktails/<%= cocktail._id %>/delete?csrf=<%= csrfToken %>"
+          data-confirm="Delete this cocktail and its ingredients?"
+        >
+          <button class="danger" type="submit">
+            Delete
+            <span class="sr-only"><%= cocktail.name %></span>
+          </button>
+        </form>
+      </div>
+    </article>
+    <% }) %>
+  </div>
+  <% if(pages > 1) { %>
+  <nav class="pagination" aria-label="Pagination">
+    <% if(page > 1) { %>
+    <a href="/?page=<%= page - 1 %>&q=<%= encodeURIComponent(q) %>">← Previous</a>
+    <% } %>
+    <span>Page <%= page %> of <%= pages %></span>
+    <% if(page < pages) { %>
+    <a href="/?page=<%= page + 1 %>&q=<%= encodeURIComponent(q) %>">Next →</a>
+    <% } %>
+  </nav>
+  <% } %>
+</section>
 <%- include('layout/footer') %>

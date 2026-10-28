@@ -1,62 +1,39 @@
 <%- include('layout/header') %>
-
-<div class="container">
-    <div class="row my-4">
-        <div class="col-lg-12">
-            <h3 class="text-center">Ingredients for <%= cocktail.name %></h3>
-            <div class="table-responsive">
-                <table class="table table-striped text-center">
-                    <thead>
-                        <tr class="table-dark">
-                            <th>ID</th>
-                            <th>Name</th>
-                            <th>Description</th>
-                            <th>Is Alcohol?</th>
-                            <th>Image</th>
-                            <th>Quantity</th>
-                            <th>Actions</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        <% if (Array.isArray(cocktail.ingredients)) { %>
-                            <% cocktail.ingredients.forEach(function(ingredientObj, index) { %>
-                                <% const ingredient = ingredientObj.ingredient; %>
-                                <tr>
-                                    <td><%= index + 1 %></td>
-                                    <td><%= ingredient.name %></td>
-                                    <td><%= ingredient.description %></td>
-                                    <td><%= ingredient.isAlcohol ? 'Yes' : 'No' %></td>
-                                    <td>
-                                        <% if (ingredient.image) { %>
-                                            <img src="/uploads/<%= ingredient.image %>" class="img-thumbnail" alt="<%= ingredient.name %>" style="width: 100px; height: 100px;">
-                                        <% } else { %>
-                                            No image
-                                        <% } %>
-                                    </td>
-                                    <td><%= ingredientObj.quantity %></td>
-                                    <td>
-                                        <a href="/update/ingredient/<%= ingredient._id %>" class="text-success" >
-                                            <i class="fas fa-edit fa-lg mx-1"></i>
-                                        </a>
-                                        <a href="/cocktails/<%= cocktail._id %>/ingredients/<%= ingredient._id %>/delete" class="text-danger" onclick="return confirm('Are you sure you want to delete this ingredient?');">
-                                            <i class="fas fa-trash fa-lg mx-1"></i>
-                                        </a>
-                                    </td>
-                                    
-                                </tr>
-                            <% }) %>
-                        <% } else { %>
-                            <tr>
-                                <td colspan="6">No ingredients found or data is invalid</td>
-                            </tr>
-                        <% } %>
-                    </tbody>
-                </table>
-            </div>
-        </div>
+<a href="/">← Collection</a>
+<section class="recipe-heading">
+  <p class="eyebrow"><%= cocktail.category %></p>
+  <h1><%= cocktail.name %></h1>
+  <h2>Method</h2>
+  <p class="method"><%= cocktail.instruction %></p>
+  <a href="/cocktails/<%= cocktail._id %>/edit">Edit recipe →</a>
+</section>
+<h2>Ingredients</h2>
+<div class="cards">
+  <% cocktail.ingredients.forEach((entry) => { const ingredient = entry.ingredient; if(!ingredient) return; %>
+  <article class="recipe">
+    <% if(ingredient.image) { %>
+    <img class="ingredient-photo" src="/uploads/<%= encodeURIComponent(ingredient.image) %>" alt="<%= ingredient.name %>" loading="lazy" />
+    <% } %>
+    <p class="eyebrow"><%= ingredient.isAlcohol ? 'Contains alcohol' : 'Alcohol free' %></p>
+    <h3><%= ingredient.name %></h3>
+    <p><%= ingredient.description %></p>
+    <p><strong><%= entry.quantity %></strong></p>
+    <div class="actions">
+      <a href="/update/ingredient/<%= ingredient._id %>">Edit</a>
+      <form
+        method="post"
+        action="/cocktails/<%= cocktail._id %>/ingredients/<%= ingredient._id %>/delete?csrf=<%= csrfToken %>"
+        data-confirm="Remove this ingredient?"
+      >
+        <button class="danger" type="submit">
+          Remove
+          <span class="sr-only"><%= ingredient.name %></span>
+        </button>
+      </form>
     </div>
+  </article>
+  <% }) %>
 </div>
-
-<a href="/" class="btn btn-primary mt-3">Back to Cocktails</a>
-
-<%- include('layout/footer') %>
+<% if(!cocktail.ingredients.length) { %>
+<p class="empty">This recipe has no ingredients.</p>
+<% } %><%- include('layout/footer') %>
