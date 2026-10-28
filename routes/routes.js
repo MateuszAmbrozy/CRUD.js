@@ -1,284 +1,315 @@
 const express = require('express');
-const router = express.Router();
+const mongoose = require('mongoose');
 const Cocktail = require('../models/cocktails');
 const Ingredient = require('../models/ingredients');
-const multer = require('multer');
-
-// Image upload configuration
-var storage = multer.diskStorage({
-    destination: function(req, file, cb){
-        cb(null, './uploads');
-    },
-    filename: function(req, file, cb){
-        cb(null, file.fieldname+"_"+Date.now()+"_"+file.originalname);
-    },
-});
-
-var upload = multer({
-    storage: storage
-}).single('image');
-
-// Home page route
-router.get('/', async (req, res) => {
+const {
+  HttpError,
+  cocktailInput,
+  ingredientInput,
+} = require('../lib/validation');
+const {
+  addUpload,
+  editUpload,
+  saveImage,
+  removeImages,
+} = require('../lib/uploads');
+const router = express.Router();
+const route = (fn) => (req, res, next) =>
+  Promise.resolve(fn(req, res)).catch(next);
+for (const param of ['id', 'cocktailId', 'ingredientId'])
+  router.param(param, (req, res, next, value) => {
+    next(
+      /^[a-f\d]{24}$/i.test(value)
+        ? undefined
+        : new HttpError(400, 'Invalid resource identifier.'),
+    );
+  });
+const found = (value, label) => {
+  if (!value) throw new HttpError(404, `${label} not found.`);
+  return value;
+};
+function success(req, res, message, destination = '/') {
+  req.session.message = message;
+  req.session.save((error) => {
+    if (error) return res.status(500).send('Unable to save the session.');
+    res.redirect(303, destination);
+  });
+}
+router.get(
+  '/',
+  route(async (req, res) => {
+    const page = Math.max(
+      1,
+      Math.min(10000, Number.parseInt(req.query.page, 10) || 1),
+    );
+    const q =
+      typeof req.query.q === 'string' ? req.query.q.trim().slice(0, 100) : '';
+    const filter = q
+      ? {
+          name: {
+            $regex: q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'),
+            $options: 'i',
+          },
+        }
+      : {};
+    const [cocktails, total] = await Promise.all([
+      Cocktail.find(filter)
+        .sort({ createdAt: -1, _id: -1 })
+        .skip((page - 1) * 12)
+        .limit(12)
+        .lean(),
+      Cocktail.countDocuments(filter),
+    ]);
+    res.render('index', {
+      title: 'Cocktail Library',
+      cocktails,
+      page,
+      pages: Math.ceil(total / 12),
+      total,
+      q,
+    });
+  }),
+);
+router.get('/add', (req, res) =>
+  res.render('add_cocktails', { title: 'Add cocktail' }),
+);
+router.post(
+  '/add',
+  addUpload,
+  route(async (req, res) => {
+    const data = cocktailInput(req.body);
+    const list = req.body.ingredients;
+    if (
+      !Array.isArray(list) ||
+      !list.length ||
+      list.length > 20 ||
+      list.some((item) => !item)
+    )
+      throw new HttpError(422, 'Provide between 1 and 20 ingredients.');
+    const inputs = list.map(ingredientInput);
+    for (const key of Object.keys(req.files || {}))
+      if (Number(key.match(/\d+/)[0]) >= list.length)
+        throw new HttpError(422, 'Image has no matching ingredient.');
+    const created = [];
     try {
-        const cocktails = await Cocktail.find();
-        res.render('index', { title: 'Home page', cocktails });
-    } catch (error) {
-        console.error(error);
-        res.status(500).send('Server error');
-    }
-});
-
-// Add cocktail routes
-router.get('/add', (req, res) => {
-    res.render('add_cocktails', { title: "Add Cocktails" });
-});
-
-router.post('/add', upload, async (req, res) => {
-    try {
-        const { name, category, instruction } = req.body;
-        const ingredients = Array.isArray(req.body.ingredients) ? req.body.ingredients : [req.body.ingredients];
-
-        const newCocktail = new Cocktail({
-            name,
-            category,
-            instruction,
-            ingredients: [] 
+      const ingredients = [];
+      for (const [i, input] of inputs.entries()) {
+        const { quantity, ...fields } = input;
+        ingredients.push({
+          quantity,
+          document: new Ingredient({
+            ...fields,
+            image: await saveImage(
+              req.files?.[`ingredients[${i}][image]`]?.[0],
+              created,
+            ),
+          }),
         });
-
-        for (let i = 0; i < ingredients.length; i++) {
-            const ingredientData = ingredients[i];
-            const imageKey = `ingredients[${i}][image]`;
-            const file = req.files.find(file => file.fieldname === imageKey); 
-            const imageFilename = file ? file.filename : null;
-
-            const newIngredient = new Ingredient({
-                name: ingredientData.name,
-                description: ingredientData.description,
-                isAlcohol: ingredientData.isAlcohol === 'true',
-                image: imageFilename
-            });
-
-            await newIngredient.save();
-
-            newCocktail.ingredients.push({ 
-                ingredient: newIngredient._id, 
-                quantity: ingredientData.quantity 
-            });
-        }
-
-        await newCocktail.save();
-
-        req.session.message = {
-            type: 'success',
-            message: 'Cocktail added successfully!'
-        };
-        console.log(req.body);
-
-        res.redirect('/');
+      }
+      await mongoose.connection.transaction(async (session) => {
+        for (const entry of ingredients)
+          await Ingredient.create([{ ...entry.document.toObject() }], {
+            session,
+          });
+        await Cocktail.create(
+          [
+            {
+              ...data,
+              ingredients: ingredients.map(({ quantity, document }) => ({
+                ingredient: document._id,
+                quantity,
+              })),
+            },
+          ],
+          { session },
+        );
+      });
     } catch (error) {
-        console.error(error); 
-        res.status(500).send('Server error');
+      await removeImages(created);
+      throw error;
     }
-});
-
-// Edit cocktail routes
-router.get('/cocktails/:id/edit', async (req, res) => {
+    success(req, res, 'Cocktail added.');
+  }),
+);
+router.get(
+  '/cocktails/:id/edit',
+  route(async (req, res) => {
+    res.render('edit_cocktail', {
+      title: 'Edit cocktail',
+      cocktail: found(
+        await Cocktail.findById(req.params.id).lean(),
+        'Cocktail',
+      ),
+    });
+  }),
+);
+router.post(
+  '/cocktails/:id/edit',
+  route(async (req, res) => {
+    const data = cocktailInput(req.body);
+    found(
+      await Cocktail.findByIdAndUpdate(req.params.id, data, {
+        runValidators: true,
+      }),
+      'Cocktail',
+    );
+    success(req, res, 'Cocktail updated.');
+  }),
+);
+router.post(
+  '/cocktails/:id/delete',
+  route(async (req, res) => {
+    let images = [];
+    await mongoose.connection.transaction(async (session) => {
+      const cocktail = found(
+        await Cocktail.findById(req.params.id).session(session),
+        'Cocktail',
+      );
+      const ids = cocktail.ingredients.map((item) => item.ingredient);
+      const shared = await Cocktail.distinct('ingredients.ingredient', {
+        _id: { $ne: cocktail._id },
+        'ingredients.ingredient': { $in: ids },
+      }).session(session);
+      const owned = ids.filter(
+        (id) => !shared.some((other) => other.equals(id)),
+      );
+      images = (
+        await Ingredient.find({ _id: { $in: owned } }).session(session)
+      ).map((item) => item.image);
+      await Ingredient.deleteMany({ _id: { $in: owned } }, { session });
+      await Cocktail.deleteOne({ _id: cocktail._id }, { session });
+    });
+    await removeImages(images);
+    success(req, res, 'Cocktail deleted.');
+  }),
+);
+router.get(
+  '/cocktails/:id/ingredients',
+  route(async (req, res) => {
+    const cocktail = found(
+      await Cocktail.findById(req.params.id)
+        .populate('ingredients.ingredient')
+        .lean(),
+      'Cocktail',
+    );
+    res.render('show_ingredients', { title: cocktail.name, cocktail });
+  }),
+);
+router.post(
+  '/cocktails/:cocktailId/ingredients/:ingredientId/delete',
+  route(async (req, res) => {
+    let image;
+    await mongoose.connection.transaction(async (session) => {
+      const cocktail = found(
+        await Cocktail.findById(req.params.cocktailId).session(session),
+        'Cocktail',
+      );
+      if (
+        !cocktail.ingredients.some((item) =>
+          item.ingredient.equals(req.params.ingredientId),
+        )
+      )
+        throw new HttpError(
+          404,
+          'Ingredient does not belong to this cocktail.',
+        );
+      cocktail.ingredients = cocktail.ingredients.filter(
+        (item) => !item.ingredient.equals(req.params.ingredientId),
+      );
+      await cocktail.save({ session });
+      if (
+        !(await Cocktail.exists({
+          'ingredients.ingredient': req.params.ingredientId,
+        }).session(session))
+      ) {
+        const ingredient = await Ingredient.findByIdAndDelete(
+          req.params.ingredientId,
+          { session },
+        );
+        image = ingredient?.image;
+      }
+    });
+    await removeImages([image]);
+    success(
+      req,
+      res,
+      'Ingredient removed.',
+      `/cocktails/${req.params.cocktailId}/ingredients`,
+    );
+  }),
+);
+router.get(
+  '/update/ingredient/:id',
+  route(async (req, res) => {
+    const ingredient = found(
+      await Ingredient.findById(req.params.id).lean(),
+      'Ingredient',
+    );
+    const cocktail = found(
+      await Cocktail.findOne({
+        'ingredients.ingredient': ingredient._id,
+      }).lean(),
+      'Cocktail',
+    );
+    res.render('edit_ingredients', {
+      title: 'Edit ingredient',
+      ingredient,
+      quantity: cocktail.ingredients.find((item) =>
+        item.ingredient.equals(ingredient._id),
+      ).quantity,
+      cocktailId: cocktail._id,
+    });
+  }),
+);
+router.post(
+  '/update/ingredient/:id',
+  editUpload,
+  route(async (req, res) => {
+    const { quantity, ...fields } = ingredientInput(req.body);
+    if (!mongoose.isObjectIdOrHexString(req.body.cocktailId))
+      throw new HttpError(400, 'Invalid cocktail identifier.');
+    const created = [];
+    let oldImage;
     try {
-        const cocktail = await Cocktail.findById(req.params.id);
-        
-        if (!cocktail) {
-            return res.status(404).send('Cocktail not found');
-        }
-        
-        res.render('edit_cocktail', {
-            title: "Edit Cocktail",
-            cocktail: cocktail
-        });
+      const image = await saveImage(req.file, created);
+      await mongoose.connection.transaction(async (session) => {
+        const cocktail = found(
+          await Cocktail.findOne({
+            _id: req.body.cocktailId,
+            'ingredients.ingredient': req.params.id,
+          }).session(session),
+          'Cocktail ingredient',
+        );
+        const ingredient = found(
+          await Ingredient.findById(req.params.id).session(session),
+          'Ingredient',
+        );
+        oldImage = ingredient.image;
+        Object.assign(ingredient, fields);
+        if (image) ingredient.image = image;
+        await ingredient.save({ session });
+        cocktail.ingredients.find((item) =>
+          item.ingredient.equals(ingredient._id),
+        ).quantity = quantity;
+        await cocktail.save({ session });
+      });
+      if (image) await removeImages([oldImage]);
     } catch (error) {
-        console.error(error);
-        res.status(500).send('Server error');
+      await removeImages(created);
+      throw error;
     }
-});
-
-router.post('/cocktails/:id/edit', upload, async (req, res) => {
-    try {
-        const { name, category, instruction } = req.body;
-
-        await Cocktail.findByIdAndUpdate(req.params.id, {
-            name,
-            category,
-            instruction
-        });
-
-        req.session.message = {
-            type: 'success',
-            message: 'Cocktail updated successfully!'
-        };
-
-        res.redirect('/');
-    } catch (error) {
-        console.error(error);
-        res.status(500).send('Server error');
-    }
-});
-
-// Delete cocktail and its ingredients
-router.get('/cocktails/:id/delete', async (req, res) => {
-    try {
-        const cocktailId = req.params.id;
-        const cocktail = await Cocktail.findById(cocktailId);
-
-        if (!cocktail) {
-            return res.status(404).send('Cocktail not found');
-        }
-
-        // Delete the associated ingredients
-        for (const ingredientObj of cocktail.ingredients) {
-            await Ingredient.findByIdAndDelete(ingredientObj.ingredient);
-        }
-
-        // Delete the cocktail itself
-        await Cocktail.findByIdAndDelete(cocktailId);
-
-        req.session.message = {
-            type: 'success',
-            message: 'Cocktail and its ingredients deleted successfully!'
-        };
-
-        res.redirect('/');
-    } catch (error) {
-        console.error(error);
-        res.status(500).send('Server error');
-    }
-});
-
-// Delete individual ingredient from cocktail
-router.get('/cocktails/:cocktailId/ingredients/:ingredientId/delete', async (req, res) => {
-    try {
-        const { cocktailId, ingredientId } = req.params;
-
-        const cocktail = await Cocktail.findById(cocktailId);
-        if (!cocktail) {
-            return res.status(404).send('Cocktail not found');
-        }
-
-        cocktail.ingredients = cocktail.ingredients.filter(ingredientObj => ingredientObj.ingredient.toString() !== ingredientId);
-        await cocktail.save();
-        await Ingredient.findByIdAndDelete(ingredientId);
-
-        req.session.message = {
-            type: 'success',
-            message: 'Ingredient deleted successfully!'
-        };
-
-        res.redirect(`/cocktails/${cocktailId}/ingredients`);
-    } catch (error) {
-        console.error(error);
-        res.status(500).send('Server error');
-    }
-});
-
-// Fetch one ingredient for editing
-router.get('/update/ingredient/:id', async (req, res) => {
-    try {
-        const ingredientId = req.params.id;
-        const ingredient = await Ingredient.findById(ingredientId);
-        const cocktail = await Cocktail.findOne({ 'ingredients.ingredient': ingredientId });
-
-        if (!ingredient) {
-            return res.status(404).send('Ingredient not found');
-        }
-
-        if (!cocktail) {
-            return res.status(404).send('Cocktail not found');
-        }
-
-        const ingredientObj = cocktail.ingredients.find(obj => obj.ingredient.toString() === ingredientId);
-        const quantity = ingredientObj ? ingredientObj.quantity : '';
-
-        res.render('edit_ingredients', {
-            title: `Edit Ingredient: ${ingredient.name}`,
-            ingredient,
-            quantity,
-            cocktailId: cocktail._id
-        });
-    } catch (error) {
-        console.error(error);
-        res.status(500).send('Server error');
-    }
-});
-
-// Fetch ingredients of a specific cocktail
-router.get('/cocktails/:id/ingredients', async (req, res) => {
-    try {
-        const cocktail = await Cocktail.findById(req.params.id).populate('ingredients.ingredient');
-        if (!cocktail) {
-            return res.status(404).send('Cocktail not found');
-        }
-
-        res.render('show_ingredients', {
-            cocktail,
-            title: `Ingredients for ${cocktail.name}`
-        });
-    } catch (error) {
-        console.error(error);
-        res.status(500).send('Server error');
-    }
-});
-
-router.post('/update/ingredient/:id', upload, async (req, res) => {
-    try {
-        const ingredientId = req.params.id;
-        const { cocktailId, name, description, isAlcohol, quantity } = req.body;
-
-        // Find the ingredient by ID
-        const ingredient = await Ingredient.findById(ingredientId);
-        if (!ingredient) {
-            return res.status(404).send('Ingredient not found');
-        }
-
-        // Update ingredient details
-        ingredient.name = name;
-        ingredient.description = description;
-        ingredient.isAlcohol = isAlcohol === 'true';
-
-        // Update image if provided
-        if (req.file) {
-            ingredient.image = req.file.filename;
-        }
-
-        await ingredient.save();
-
-        // Update the quantity in the Cocktail model
-        const cocktail = await Cocktail.findOne({ 'ingredients.ingredient': ingredientId });
-        if (cocktail) {
-            const ingredientObj = cocktail.ingredients.find(obj => obj.ingredient.toString() === ingredientId);
-            if (ingredientObj) {
-                ingredientObj.quantity = quantity;
-                await cocktail.save();
-            }
-        }
-
-        req.session.message = {
-            type: 'success',
-            message: 'Ingredient and quantity updated successfully!'
-        };
-
-        // Redirect back to the cocktail's ingredients page
-        res.redirect(`/cocktails/${cocktailId}/ingredients`);
-    } catch (error) {
-        console.error(error);
-        res.status(500).send('Server error');
-    }
-});
-
-router.get('/about', (req, res) => {
-    res.render('about', {title: "About"});
-});
-
-router.get('/contact', (req, res) => {
-    res.render('contact', {title: "Contact"});
-});
-
+    success(
+      req,
+      res,
+      'Ingredient updated.',
+      `/cocktails/${req.body.cocktailId}/ingredients`,
+    );
+  }),
+);
+router.get('/about', (req, res) =>
+  res.render('about', { title: 'About the project' }),
+);
+router.get('/contact', (req, res) =>
+  res.render('contact', { title: 'Contact' }),
+);
 module.exports = router;

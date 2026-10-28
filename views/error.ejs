@@ -1,0 +1,9 @@
+<%- include('layout/header') %>
+<section class="prose">
+  <p class="eyebrow">ERROR <%= status %></p>
+  <h1><%= status === 404 ? 'Nothing here yet.' : 'Unable to complete the request.' %></h1>
+  <p role="alert"><%= errorMessage %></p>
+  <p>Your browser may retain the previous form when you go back.</p>
+  <a class="button" href="/">Return to collection</a>
+</section>
+<%- include('layout/footer') %>
